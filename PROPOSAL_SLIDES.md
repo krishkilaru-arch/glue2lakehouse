@@ -17,7 +17,30 @@
 
 ---
 
-# SLIDE 2: The Problem
+# SLIDE 2: The Story
+
+## **"We Were Told It Would Take a Year"**
+
+> *A Fortune 500 financial services company ran 50+ AWS Glue jobs processing $2B in daily loan risk calculations. When leadership mandated migration to Databricks Lakehouse, the estimate came back:*
+
+### **12 months. 12 engineers. $2.6 million.**
+
+The CTO asked: *"Is there another way?"*
+
+---
+
+**8 weeks later:**
+
+✅ 50 Glue jobs migrated  
+✅ Zero production downtime  
+✅ 87% automated conversion  
+✅ $2.4M saved  
+
+### **This is the Glue2Lakehouse story.**
+
+---
+
+# SLIDE 3: The Problem
 
 ## **Enterprise Migration Challenge**
 
