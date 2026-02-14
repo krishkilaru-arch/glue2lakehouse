@@ -1,0 +1,189 @@
+{
+  "name": "apex-daily-risk-workflow",
+  "description": "Daily risk processing pipeline for Apex Financial",
+  "defaultRunProperties": {
+    "processing_date": "${CURRENT_DATE}",
+    "environment": "production"
+  },
+  "triggers": [
+    {
+      "name": "daily-schedule-trigger",
+      "type": "SCHEDULED",
+      "schedule": "cron(0 6 * * ? *)",
+      "description": "Trigger at 6 AM UTC daily",
+      "startOnCreation": true
+    }
+  ],
+  "jobs": [
+    {
+      "name": "apex-loan-ingestion",
+      "description": "Ingest loan applications from all sources",
+      "script": "s3://apex-financial-glue-scripts/etl/loan_ingestion.py",
+      "pythonVersion": "3",
+      "glueVersion": "4.0",
+      "workerType": "G.2X",
+      "numberOfWorkers": 10,
+      "timeout": 60,
+      "maxRetries": 2,
+      "jobBookmark": "ENABLE",
+      "connections": [
+        "apex-mysql-loan-origination"
+      ],
+      "defaultArguments": {
+        "--enable-metrics": "true",
+        "--enable-spark-ui": "true",
+        "--enable-continuous-cloudwatch-log": "true",
+        "--source_database": "apex_raw",
+        "--target_database": "apex_curated",
+        "--TempDir": "s3://apex-financial-glue-temp/",
+        "--extra-py-files": "s3://apex-financial-glue-libs/apex_risk_platform-3.2.1.zip"
+      }
+    },
+    {
+      "name": "apex-credit-pull",
+      "description": "Pull credit reports for new applications",
+      "script": "s3://apex-financial-glue-scripts/etl/credit_pull.py",
+      "pythonVersion": "3",
+      "glueVersion": "4.0",
+      "workerType": "G.1X",
+      "numberOfWorkers": 5,
+      "timeout": 120,
+      "maxRetries": 1,
+      "connections": [],
+      "defaultArguments": {
+        "--enable-metrics": "true",
+        "--bureau": "EXPERIAN",
+        "--TempDir": "s3://apex-financial-glue-temp/",
+        "--extra-py-files": "s3://apex-financial-glue-libs/apex_risk_platform-3.2.1.zip"
+      },
+      "dependsOn": [
+        {
+          "jobName": "apex-loan-ingestion",
+          "state": "SUCCEEDED"
+        }
+      ]
+    },
+    {
+      "name": "apex-credit-scoring",
+      "description": "Apply credit scoring models",
+      "script": "s3://apex-financial-glue-scripts/etl/credit_scoring.py",
+      "pythonVersion": "3",
+      "glueVersion": "4.0",
+      "workerType": "G.2X",
+      "numberOfWorkers": 10,
+      "timeout": 90,
+      "maxRetries": 2,
+      "jobBookmark": "DISABLE",
+      "defaultArguments": {
+        "--enable-metrics": "true",
+        "--source_database": "apex_curated",
+        "--target_database": "apex_analytics",
+        "--TempDir": "s3://apex-financial-glue-temp/",
+        "--extra-py-files": "s3://apex-financial-glue-libs/apex_risk_platform-3.2.1.zip"
+      },
+      "dependsOn": [
+        {
+          "jobName": "apex-credit-pull",
+          "state": "SUCCEEDED"
+        }
+      ]
+    },
+    {
+      "name": "apex-portfolio-risk",
+      "description": "Portfolio-level risk analysis",
+      "script": "s3://apex-financial-glue-scripts/etl/portfolio_risk.py",
+      "pythonVersion": "3",
+      "glueVersion": "4.0",
+      "workerType": "G.2X",
+      "numberOfWorkers": 15,
+      "timeout": 120,
+      "maxRetries": 1,
+      "defaultArguments": {
+        "--enable-metrics": "true",
+        "--TempDir": "s3://apex-financial-glue-temp/",
+        "--extra-py-files": "s3://apex-financial-glue-libs/apex_risk_platform-3.2.1.zip"
+      },
+      "dependsOn": [
+        {
+          "jobName": "apex-credit-scoring",
+          "state": "SUCCEEDED"
+        }
+      ]
+    },
+    {
+      "name": "apex-regulatory-reporting",
+      "description": "Generate regulatory compliance reports",
+      "script": "s3://apex-financial-glue-scripts/etl/regulatory_reporting.py",
+      "pythonVersion": "3",
+      "glueVersion": "4.0",
+      "workerType": "G.1X",
+      "numberOfWorkers": 5,
+      "timeout": 60,
+      "maxRetries": 2,
+      "defaultArguments": {
+        "--enable-metrics": "true",
+        "--report_types": "TILA,ECOA,FCRA",
+        "--TempDir": "s3://apex-financial-glue-temp/",
+        "--extra-py-files": "s3://apex-financial-glue-libs/apex_risk_platform-3.2.1.zip"
+      },
+      "dependsOn": [
+        {
+          "jobName": "apex-portfolio-risk",
+          "state": "SUCCEEDED"
+        }
+      ]
+    }
+  ],
+  "crawlers": [
+    {
+      "name": "apex-curated-crawler",
+      "role": "arn:aws:iam::123456789012:role/ApexGlueCrawlerRole",
+      "databaseName": "apex_curated",
+      "targets": {
+        "s3Targets": [
+          {"path": "s3://apex-financial-datalake-curated/loan_applications/"},
+          {"path": "s3://apex-financial-datalake-curated/credit_bureau_reports/"}
+        ]
+      },
+      "schedule": "cron(30 7 * * ? *)",
+      "schemaChangePolicy": {
+        "updateBehavior": "UPDATE_IN_DATABASE",
+        "deleteBehavior": "LOG"
+      },
+      "dependsOn": [
+        {
+          "jobName": "apex-loan-ingestion",
+          "state": "SUCCEEDED"
+        }
+      ]
+    },
+    {
+      "name": "apex-analytics-crawler",
+      "role": "arn:aws:iam::123456789012:role/ApexGlueCrawlerRole",
+      "databaseName": "apex_analytics",
+      "targets": {
+        "s3Targets": [
+          {"path": "s3://apex-financial-datalake-analytics/credit_decisions/"},
+          {"path": "s3://apex-financial-datalake-analytics/portfolio_cube/"}
+        ]
+      },
+      "schedule": "cron(0 8 * * ? *)",
+      "dependsOn": [
+        {
+          "jobName": "apex-portfolio-risk",
+          "state": "SUCCEEDED"
+        }
+      ]
+    }
+  ],
+  "notifications": {
+    "onSuccess": {
+      "snsTopicArn": "arn:aws:sns:us-east-1:123456789012:apex-glue-success",
+      "message": "Daily risk workflow completed successfully"
+    },
+    "onFailure": {
+      "snsTopicArn": "arn:aws:sns:us-east-1:123456789012:apex-glue-failure",
+      "message": "Daily risk workflow FAILED - immediate attention required"
+    }
+  }
+}

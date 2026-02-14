@@ -1,0 +1,14 @@
+pyspark>=3.3.0
+click>=8.0.0
+pyyaml>=6.0
+colorama>=0.4.6
+astunparse>=1.6.3
+streamlit>=1.30.0
+plotly>=5.18.0
+pandas>=2.0.0
+
+# AI Agent Dependencies (Optional - install for LLM mode)
+databricks-sdk>=0.12.0  # Databricks Foundation Models
+openai>=1.3.0  # OpenAI GPT-4
+anthropic>=0.7.0  # Claude
+boto3>=1.28.0  # AWS Glue API access

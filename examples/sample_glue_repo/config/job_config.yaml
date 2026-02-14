@@ -1,0 +1,181 @@
+# Apex Financial Risk Platform - Job Configuration
+# This file configures Glue job parameters across environments
+
+default:
+  glue_version: "4.0"
+  python_version: "3"
+  worker_type: "G.2X"
+  max_retries: 2
+  timeout_minutes: 120
+  enable_metrics: true
+  enable_spark_ui: true
+  enable_cloudwatch_logs: true
+  
+  spark_config:
+    spark.sql.sources.partitionOverwriteMode: "dynamic"
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "true"
+    spark.sql.shuffle.partitions: "200"
+    spark.dynamicAllocation.enabled: "true"
+    spark.serializer: "org.apache.spark.serializer.KryoSerializer"
+
+environments:
+  dev:
+    s3_prefix: "s3://apex-financial-dev"
+    databases:
+      raw: "apex_raw_dev"
+      curated: "apex_curated_dev"
+      analytics: "apex_analytics_dev"
+    worker_count: 2
+    connections:
+      mysql: "apex-mysql-dev"
+      redshift: "apex-redshift-dev"
+    
+  staging:
+    s3_prefix: "s3://apex-financial-staging"
+    databases:
+      raw: "apex_raw_staging"
+      curated: "apex_curated_staging"
+      analytics: "apex_analytics_staging"
+    worker_count: 5
+    connections:
+      mysql: "apex-mysql-staging"
+      redshift: "apex-redshift-staging"
+    
+  production:
+    s3_prefix: "s3://apex-financial-datalake"
+    databases:
+      raw: "apex_raw"
+      curated: "apex_curated"
+      analytics: "apex_analytics"
+    worker_count: 10
+    connections:
+      mysql: "apex-mysql-loan-origination"
+      redshift: "apex-redshift-analytics"
+
+jobs:
+  loan_ingestion:
+    script: "etl/loan_ingestion.py"
+    description: "Ingest loan applications from all sources"
+    job_bookmark: true
+    worker_type: "G.2X"
+    worker_count:
+      dev: 2
+      staging: 5
+      production: 10
+    timeout_minutes: 60
+    required_connections:
+      - mysql
+    arguments:
+      source_database: "${databases.raw}"
+      target_database: "${databases.curated}"
+      quarantine_path: "${s3_prefix}-quarantine/loan_applications/"
+    
+  credit_scoring:
+    script: "etl/credit_scoring.py"
+    description: "Apply credit risk scoring models"
+    job_bookmark: false
+    worker_type: "G.2X"
+    worker_count:
+      dev: 3
+      staging: 5
+      production: 10
+    timeout_minutes: 90
+    arguments:
+      source_database: "${databases.curated}"
+      target_database: "${databases.analytics}"
+      min_credit_score: 500
+      max_dti_ratio: 0.55
+    
+  portfolio_risk:
+    script: "etl/portfolio_risk.py"
+    description: "Portfolio-level risk analysis and reporting"
+    job_bookmark: false
+    worker_type: "G.2X"
+    worker_count:
+      dev: 3
+      staging: 8
+      production: 15
+    timeout_minutes: 120
+    
+  regulatory_reporting:
+    script: "etl/regulatory_reporting.py"
+    description: "Generate regulatory compliance reports"
+    job_bookmark: false
+    worker_type: "G.1X"
+    worker_count:
+      dev: 2
+      staging: 3
+      production: 5
+    timeout_minutes: 60
+    arguments:
+      report_types: "TILA,ECOA,FCRA"
+
+workflows:
+  daily_risk:
+    schedule: "cron(0 6 * * ? *)"
+    jobs:
+      - loan_ingestion
+      - credit_scoring
+      - portfolio_risk
+      - regulatory_reporting
+    
+  weekly_reporting:
+    schedule: "cron(0 2 ? * MON *)"
+    jobs:
+      - portfolio_risk
+      - regulatory_reporting
+
+data_quality:
+  required_fields:
+    loan_applications:
+      - application_id
+      - applicant_id
+      - loan_amount
+      - term_months
+      - application_date
+    credit_bureau:
+      - applicant_id
+      - fico_score
+      
+  validation_rules:
+    loan_amount:
+      min: 1000
+      max: 150000
+    term_months:
+      values: [12, 24, 36, 48, 60, 72, 84]
+    credit_score:
+      min: 300
+      max: 850
+    dti_ratio:
+      min: 0
+      max: 1.0
+    ltv_ratio:
+      min: 0.5
+      max: 1.5
+
+monitoring:
+  alerts:
+    - name: "Job Failure"
+      condition: "job_status == FAILED"
+      severity: "critical"
+      notify: ["data-engineering@apexfinancial.com", "ops-oncall"]
+      
+    - name: "High Delinquency Rate"
+      condition: "delinquency_rate_30 > 0.05"
+      severity: "warning"
+      notify: ["risk-team@apexfinancial.com"]
+      
+    - name: "Data Quality Issues"
+      condition: "dq_failure_rate > 0.01"
+      severity: "warning"
+      notify: ["data-engineering@apexfinancial.com"]
+
+secrets:
+  credit_bureau:
+    experian: "apex/credit-bureau/experian"
+    equifax: "apex/credit-bureau/equifax"
+    transunion: "apex/credit-bureau/transunion"
+  databases:
+    mysql: "apex/db/mysql-credentials"
+    redshift: "apex/db/redshift-credentials"

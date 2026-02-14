@@ -1,0 +1,174 @@
+{
+  "crawlers": [
+    {
+      "Name": "apex-raw-crawler",
+      "Description": "Crawl raw zone data for schema discovery",
+      "Role": "arn:aws:iam::123456789012:role/ApexGlueCrawlerRole",
+      "DatabaseName": "apex_raw",
+      "Targets": {
+        "S3Targets": [
+          {
+            "Path": "s3://apex-financial-datalake-raw/loan_applications/",
+            "Exclusions": ["*.tmp", "_temporary/**"]
+          },
+          {
+            "Path": "s3://apex-financial-datalake-raw/applicants/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-raw/credit_bureau_reports/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-raw/payment_transactions/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-raw/vehicle_inventory/"
+          }
+        ],
+        "JdbcTargets": [
+          {
+            "ConnectionName": "apex-mysql-loan-origination",
+            "Path": "loan_origination/%",
+            "Exclusions": ["loan_origination/audit_%"]
+          }
+        ]
+      },
+      "Schedule": "cron(0 5 * * ? *)",
+      "SchemaChangePolicy": {
+        "UpdateBehavior": "UPDATE_IN_DATABASE",
+        "DeleteBehavior": "LOG"
+      },
+      "RecrawlPolicy": {
+        "RecrawlBehavior": "CRAWL_NEW_FOLDERS_ONLY"
+      },
+      "Configuration": {
+        "Version": 1.0,
+        "CrawlerOutput": {
+          "Partitions": {"AddOrUpdateBehavior": "InheritFromTable"},
+          "Tables": {"AddOrUpdateBehavior": "MergeNewColumns"}
+        },
+        "Grouping": {
+          "TableGroupingPolicy": "CombineCompatibleSchemas"
+        }
+      },
+      "Tags": {
+        "Environment": "production",
+        "Team": "data-engineering",
+        "CostCenter": "DE-001"
+      }
+    },
+    {
+      "Name": "apex-curated-crawler",
+      "Description": "Crawl curated zone tables",
+      "Role": "arn:aws:iam::123456789012:role/ApexGlueCrawlerRole",
+      "DatabaseName": "apex_curated",
+      "Targets": {
+        "S3Targets": [
+          {
+            "Path": "s3://apex-financial-datalake-curated/loan_applications/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-curated/credit_bureau_reports/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-curated/active_loans/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-curated/customer_payment_history/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-curated/payment_transactions/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-curated/dealers/"
+          }
+        ]
+      },
+      "Schedule": "cron(30 7 * * ? *)",
+      "SchemaChangePolicy": {
+        "UpdateBehavior": "UPDATE_IN_DATABASE",
+        "DeleteBehavior": "LOG"
+      },
+      "Tags": {
+        "Environment": "production",
+        "Team": "data-engineering"
+      }
+    },
+    {
+      "Name": "apex-analytics-crawler",
+      "Description": "Crawl analytics/reporting zone",
+      "Role": "arn:aws:iam::123456789012:role/ApexGlueCrawlerRole",
+      "DatabaseName": "apex_analytics",
+      "Targets": {
+        "S3Targets": [
+          {
+            "Path": "s3://apex-financial-datalake-analytics/credit_decisions/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/portfolio_cube/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/portfolio_daily_snapshot/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/vintage_analysis/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/concentration_risk/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/dealer_performance/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/regulatory_compliance/"
+          },
+          {
+            "Path": "s3://apex-financial-datalake-analytics/executive_dashboard/"
+          }
+        ]
+      },
+      "Schedule": "cron(0 8 * * ? *)",
+      "SchemaChangePolicy": {
+        "UpdateBehavior": "UPDATE_IN_DATABASE",
+        "DeleteBehavior": "LOG"
+      },
+      "Tags": {
+        "Environment": "production",
+        "Team": "data-engineering"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "Name": "apex-mysql-loan-origination",
+      "Description": "Connection to loan origination MySQL database",
+      "ConnectionType": "JDBC",
+      "ConnectionProperties": {
+        "JDBC_CONNECTION_URL": "jdbc:mysql://loan-origination.apex-financial.com:3306/loan_origination",
+        "USERNAME": "${secrets:apex/db/mysql-credentials:username}",
+        "PASSWORD": "${secrets:apex/db/mysql-credentials:password}",
+        "JDBC_DRIVER_JAR_URI": "s3://apex-financial-glue-libs/mysql-connector-java-8.0.28.jar",
+        "JDBC_DRIVER_CLASS_NAME": "com.mysql.cj.jdbc.Driver"
+      },
+      "PhysicalConnectionRequirements": {
+        "SubnetId": "subnet-0abc123def456789",
+        "SecurityGroupIdList": ["sg-0abc123def456789"],
+        "AvailabilityZone": "us-east-1a"
+      }
+    },
+    {
+      "Name": "apex-redshift-analytics",
+      "Description": "Connection to Redshift analytics warehouse",
+      "ConnectionType": "JDBC",
+      "ConnectionProperties": {
+        "JDBC_CONNECTION_URL": "jdbc:redshift://apex-analytics.xxxxx.us-east-1.redshift.amazonaws.com:5439/analytics",
+        "USERNAME": "${secrets:apex/db/redshift-credentials:username}",
+        "PASSWORD": "${secrets:apex/db/redshift-credentials:password}"
+      },
+      "PhysicalConnectionRequirements": {
+        "SubnetId": "subnet-0abc123def456789",
+        "SecurityGroupIdList": ["sg-0redshift123456"],
+        "AvailabilityZone": "us-east-1a"
+      }
+    }
+  ]
+}

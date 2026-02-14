@@ -1,0 +1,33 @@
+# Include essential files
+include README.md
+include LICENSE
+include requirements.txt
+
+# Include package data
+recursive-include glue2lakehouse *.yaml *.yml
+
+# Exclude all markdown files except README.md
+exclude *.md
+global-exclude *.md
+include README.md
+
+# Exclude folders not needed in PyPI package
+exclude pytest.ini
+exclude mypy.ini
+exclude .flake8
+prune docs
+prune tests
+prune examples
+prune recycle
+prune databricks_app
+prune .github
+
+# Exclude development/build artifacts
+exclude .gitignore
+exclude .git*
+exclude .cursorrules
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+recursive-exclude * .pytest_cache
+recursive-exclude * htmlcov

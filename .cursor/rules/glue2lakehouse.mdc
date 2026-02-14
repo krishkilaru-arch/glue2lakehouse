@@ -1,0 +1,202 @@
+---
+alwaysApply: true
+---
+
+# Glue2Lakehouse Project Rules
+
+## Project Overview
+This is **Glue2Lakehouse**, an AI-powered AWS Glue → Databricks Lakehouse migration accelerator.
+
+Target: 80-90% automated migration with multi-project support.
+
+## Architecture Principles
+
+1. **Metadata-Driven**: All migration state in Delta tables (not SQLite)
+2. **Git-Native**: Clone repos, parse code, migrate to Databricks Repos
+3. **Agent-Powered**: Use Databricks Agents for conversion & validation
+4. **Multi-Project**: Support 1-100+ projects concurrently
+5. **Unity Catalog First**: Native UC alignment, no legacy patterns
+6. **Lakehouse Optimization**: Convert to Delta, enable Photon, suggest liquid clustering
+
+## Key Components
+
+### Core Modules
+- [glue2lakehouse/migration/orchestrator.py](mdc:glue2lakehouse/migration/orchestrator.py) - Multi-project migration orchestrator
+- [glue2lakehouse/git_extractor.py](mdc:glue2lakehouse/git_extractor.py) - Git repo cloning & parsing
+- [glue2lakehouse/metadata_manager.py](mdc:glue2lakehouse/metadata_manager.py) - Delta table management
+- [glue2lakehouse/ddl_migrator.py](mdc:glue2lakehouse/ddl_migrator.py) - DDL file parsing & UC creation
+- [glue2lakehouse/agents/](mdc:glue2lakehouse/agents/) - Databricks Agent integrations
+- [glue2lakehouse/validators/](mdc:glue2lakehouse/validators/) - Structural & functional validation
+
+### Migration Flow
+1. User provides Git repo URL + project name
+2. System clones & parses (extract entities)
+3. Creates Delta metadata tables (`migration_projects`, `source_entities`, `destination_entities`)
+4. Agents convert code (DynamicFrame → DataFrame)
+5. DDL migrated to Unity Catalog
+6. Validation agents verify
+7. Dashboard shows progress
+
+## Code Standards
+
+### Python
+- Type hints mandatory
+- Docstrings in Google style
+- Use dataclasses for entities
+- Exception handling with custom exceptions
+- Logging via `get_logger(__name__)`
+
+### Spark & Delta
+- Always use Unity Catalog 3-level namespace: `catalog.schema.table`
+- Prefer Delta over Parquet
+- Use `spark.read.table()` over `spark.read.format()`
+- Enable Auto Optimize and liquid clustering where applicable
+- Use external locations for S3 paths
+
+### Databricks Agents
+- Agent responses stored in Delta for audit
+- Retry logic for API failures
+- Cost tracking for LLM calls
+- Human-in-loop for critical decisions
+
+### Delta Tables Schema
+- `migration_projects`: Track all projects
+- `source_entities`: All Glue entities (tables/functions/jobs)
+- `destination_entities`: All Databricks entities created
+- `validation_results`: Comparison results
+- `agent_decisions`: AI conversion logs
+
+## File References
+
+### Core Framework
+- [glue2lakehouse/migration/orchestrator.py](mdc:glue2lakehouse/migration/orchestrator.py) - Main entry point
+- [glue2lakehouse/infrastructure/metadata_manager.py](mdc:glue2lakehouse/infrastructure/metadata_manager.py) - Delta table ops
+- [glue2lakehouse/infrastructure/git_extractor.py](mdc:glue2lakehouse/infrastructure/git_extractor.py) - Git clone & parse
+
+### Migration Components
+- [glue2lakehouse/migration/entity_tracker.py](mdc:glue2lakehouse/migration/entity_tracker.py) - Entity tracking
+- [glue2lakehouse/migration/table_tracker.py](mdc:glue2lakehouse/migration/table_tracker.py) - Table tracking
+- [glue2lakehouse/migration/dual_track.py](mdc:glue2lakehouse/migration/dual_track.py) - Parallel development
+- [glue2lakehouse/sdk.py](mdc:glue2lakehouse/sdk.py) - SDK with Agent APIs
+
+### AWS Glue Integration
+- [glue2lakehouse/glue/catalog_scanner.py](mdc:glue2lakehouse/glue/catalog_scanner.py) - Scan Glue Catalog
+- [glue2lakehouse/glue/job_scanner.py](mdc:glue2lakehouse/glue/job_scanner.py) - Extract jobs/crawlers
+- [glue2lakehouse/glue/cluster_mapper.py](mdc:glue2lakehouse/glue/cluster_mapper.py) - DPU to DBU mapping
+- [glue2lakehouse/glue/connection_migrator.py](mdc:glue2lakehouse/glue/connection_migrator.py) - JDBC connections
+
+### Infrastructure
+- [glue2lakehouse/infrastructure/git_extractor.py](mdc:glue2lakehouse/infrastructure/git_extractor.py) - Git clone & parse
+- [glue2lakehouse/infrastructure/metadata_manager.py](mdc:glue2lakehouse/infrastructure/metadata_manager.py) - Delta table ops
+- [glue2lakehouse/infrastructure/ddl_migrator.py](mdc:glue2lakehouse/infrastructure/ddl_migrator.py) - DDL migration
+
+### Agents
+- [glue2lakehouse/agents/code_converter_agent.py](mdc:glue2lakehouse/agents/code_converter_agent.py) - Code conversion
+- [glue2lakehouse/agents/validation_agent.py](mdc:glue2lakehouse/agents/validation_agent.py) - Validation
+- [glue2lakehouse/agents/optimization_agent.py](mdc:glue2lakehouse/agents/optimization_agent.py) - Optimization
+
+### Databricks App
+- [databricks_app/app.py](mdc:databricks_app/app.py) - Multi-project dashboard
+
+## Migration Patterns
+
+### Glue → Databricks Mappings
+
+#### Catalog
+```python
+# Glue
+glueContext.create_dynamic_frame.from_catalog(
+    database="raw",
+    table_name="customers"
+)
+
+# Databricks
+spark.read.table("production.raw.customers")
+```
+
+#### Storage
+```python
+# Glue
+s3://bucket/raw/customers/
+
+# Databricks (Option 1: External Location)
+spark.read.format("delta").load("s3://bucket/raw/customers/")
+
+# Databricks (Option 2: Unity Catalog)
+spark.read.table("production.raw.customers")
+```
+
+#### DynamicFrame Operations
+```python
+# Glue
+df = DynamicFrame.fromDF(spark_df, glueContext, "df")
+df = df.drop_fields(["old_column"])
+
+# Databricks
+df = spark_df.drop("old_column")
+```
+
+## Testing Strategy
+
+- Unit tests: `pytest tests/unit/`
+- Integration tests: `pytest tests/integration/`
+- Agent validation: `tests/agent_validation/`
+- E2E migration: `tests/e2e/` with sample projects
+
+## Databricks App Requirements
+
+- Built using Databricks Apps framework
+- Delta tables as data source
+- Real-time updates via streaming tables
+- Multi-project drill-down
+- Approval workflow for critical migrations
+- Export to PDF/Excel for leadership
+
+## Security
+
+- Unity Catalog governance
+- Secret management via Databricks Secrets
+- Service principal authentication
+- Audit logging to Delta
+- Row/column level security
+
+## Performance Targets
+
+- Parse 1000 files in < 5 minutes
+- Convert 100 Glue jobs in < 30 minutes
+- Validate 50 tables in < 10 minutes
+- Dashboard refresh < 2 seconds
+
+## Common Patterns
+
+### Adding a New Entity Type
+1. Add to `EntityType` enum
+2. Update parser in `git_extractor.py`
+3. Add converter in `agents/code_converter_agent.py`
+4. Add validator in `validators/`
+5. Update Delta schema in `metadata_manager.py`
+
+### Adding a New Agent
+1. Create in `glue2lakehouse/agents/`
+2. Inherit from `BaseAgent`
+3. Implement `convert()` or `validate()`
+4. Log decisions to Delta
+5. Add to orchestrator
+
+## Error Handling
+
+- All errors logged to Delta `migration_errors` table
+- Retryable vs non-retryable classification
+- Human escalation for complex cases
+- Rollback capability via metadata versioning
+
+## Git Workflow
+
+- Main branch: `main`
+- Feature branches: `feature/<name>`
+- Release branches: `release/<version>`
+- Hotfixes: `hotfix/<issue>`
+
+---
+
+**Remember:** This is not just code conversion — it's an AI-driven modernization accelerator!
